@@ -69,8 +69,35 @@ def process_version_prefix(orig_prefix: str, pre_flag: int = None):
     return pure_model, adjusted_prefix
 
 
+def _normalize_content(content) -> list:
+    if not content:
+        return []
+
+    if isinstance(content, list):
+        result = []
+        for entry in content:
+            if isinstance(entry, dict):
+                text = entry.get("data", "")
+            else:
+                text = str(entry) if entry is not None else ""
+            text = text.strip()
+            if text:
+                result.append(text)
+        return result
+
+    result = []
+    for raw in str(content).split("\n"):
+        line = raw.strip()
+        if not line:
+            continue
+        line = re.sub(r"^[•·]\s*", "", line)
+        if line:
+            result.append(line)
+    return result
+
+
 def format_output(data: dict, region: str) -> list:
-    upg_inst_detail = data.get("upgInstDetail", [])
+    upg_inst_detail = data.get("upgInstDetail") or data.get("secondContents") or []
     if not upg_inst_detail:
         return ["No update details found."]
 
@@ -79,7 +106,6 @@ def format_output(data: dict, region: str) -> list:
     lines = []
 
     for item in upg_inst_detail:
-        # Regular update categories (with children)
         if "children" in item:
             if first_printed:
                 lines.append("")
@@ -89,23 +115,12 @@ def format_output(data: dict, region: str) -> list:
                     lines.append("")
                 first_child = False
                 title = child.get("title", "")
-                content_list = child.get("content", [])
                 if title:
                     lines.append(title)
-                for content_item in content_list:
-                    text = (
-                        content_item.get("data", "")
-                        if isinstance(content_item, dict)
-                        else content_item
-                    )
-                    if text:
-                        if use_bullet:
-                            lines.append(f"· {text}")
-                        else:
-                            lines.append(text)
+                for text in _normalize_content(child.get("content", [])):
+                    lines.append(f"· {text}" if use_bullet else text)
             first_printed = True
 
-        # Link item (may have content text, or just link)
         elif "link" in item:
             if first_printed:
                 lines.append("")
@@ -118,7 +133,6 @@ def format_output(data: dict, region: str) -> list:
                 lines.append(url)
             first_printed = True
 
-        # Important notes (multilingual)
         elif item.get("type") == "updateTips":
             if first_printed:
                 lines.append("")
@@ -128,6 +142,15 @@ def format_output(data: dict, region: str) -> list:
             if tips_content:
                 lines.append(tips_content)
             first_printed = True
+
+        elif item.get("title"):
+            if first_printed:
+                lines.append("")
+            lines.append(item["title"])
+            for text in _normalize_content(item.get("content", "")):
+                lines.append(f"· {text}" if use_bullet else text)
+            first_printed = True
+
     return lines
 
 
